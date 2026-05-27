@@ -1,0 +1,45 @@
+{
+  "slug": "customer-support",
+  "name": "Customer Support Triage",
+  "description": "TriageAgent categorises the request; SpecialistAgent handles complex cases with a feedback loop back for clarification.",
+  "definition": {
+    "nodes": [
+      {
+        "key": "triage",
+        "label": "TriageAgent",
+        "role": "triage",
+        "system_prompt": "You are a customer support triage agent. Classify the user's request as SIMPLE or COMPLEX. For SIMPLE requests, answer directly. For COMPLEX requests, respond with exactly 'ROUTE:SPECIALIST' followed by a brief summary for the specialist.",
+        "model": "gpt-4o",
+        "tools": [],
+        "is_entry": true,
+        "position_x": 100,
+        "position_y": 200
+      },
+      {
+        "key": "specialist",
+        "label": "SpecialistAgent",
+        "role": "specialist",
+        "system_prompt": "You are a senior support specialist. Handle complex escalated queries thoroughly. If you need clarification, respond with 'NEEDS_CLARIFICATION:' followed by your question.",
+        "model": "gpt-4o",
+        "tools": ["web_search"],
+        "is_entry": false,
+        "position_x": 500,
+        "position_y": 200
+      }
+    ],
+    "edges": [
+      {
+        "source": "triage",
+        "target": "specialist",
+        "condition_expr": "ROUTE:SPECIALIST",
+        "label": "complex"
+      },
+      {
+        "source": "specialist",
+        "target": "triage",
+        "condition_expr": "NEEDS_CLARIFICATION",
+        "label": "needs clarification"
+      }
+    ]
+  }
+}

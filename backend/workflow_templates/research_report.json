@@ -1,0 +1,39 @@
+{
+  "slug": "research-report",
+  "name": "Research & Report",
+  "description": "ResearchAgent searches the web; SummaryAgent distills the findings into a concise report.",
+  "definition": {
+    "nodes": [
+      {
+        "key": "researcher",
+        "label": "ResearchAgent",
+        "role": "researcher",
+        "system_prompt": "You are a research assistant. Use the web_search tool to find detailed, accurate information about the user's query. Return a thorough research summary.",
+        "model": "gpt-4o",
+        "tools": ["web_search"],
+        "is_entry": true,
+        "position_x": 100,
+        "position_y": 200
+      },
+      {
+        "key": "summarizer",
+        "label": "SummaryAgent",
+        "role": "summarizer",
+        "system_prompt": "You are a summarization expert. Given a research summary, produce a clear, concise, well-structured report suitable for a non-technical audience.",
+        "model": "gpt-4o",
+        "tools": [],
+        "is_entry": false,
+        "position_x": 500,
+        "position_y": 200
+      }
+    ],
+    "edges": [
+      {
+        "source": "researcher",
+        "target": "summarizer",
+        "condition_expr": "",
+        "label": "research done"
+      }
+    ]
+  }
+}
