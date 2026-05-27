@@ -23,3 +23,13 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+AVAILABLE_MODELS = [
+    "gpt-5.4-mini-2026-03-17",
+    "gpt-4o-mini",
+    "gpt-4-turbo",
+    "claude-opus-4-7",
+    "claude-sonnet-4-6",
+]
+
+AVAILABLE_CHANNELS = ["telegram", "whatsapp"]

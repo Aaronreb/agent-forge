@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from sqlalchemy import String, Text, Float, Integer, Boolean, DateTime, ForeignKey, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from .base import Base
 
 
@@ -21,6 +21,7 @@ class Run(Base):
     started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     langsmith_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    trace: Mapped[list | None] = mapped_column(JSONB, nullable=True)
 
     workflow: Mapped["Workflow | None"] = relationship("Workflow", back_populates="runs")  # type: ignore[name-defined]
     messages: Mapped[list["Message"]] = relationship("Message", back_populates="run", cascade="all, delete-orphan")

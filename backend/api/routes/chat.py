@@ -26,6 +26,7 @@ router = APIRouter()
 _COST_PER_TOKEN = 0.0000004
 
 
+
 class ChatSendRequest(BaseModel):
     source_type: str       # "playbook" | "agent"
     source_id: str         # UUID of the Playbook or Agent
@@ -72,7 +73,7 @@ async def chat_send(payload: ChatSendRequest, db: AsyncSession = Depends(get_db)
 
         from runtime.sync_runner import run_playbook_sync
         try:
-            result = await run_playbook_sync(source, agents, payload.message, thread_id)
+            result = await run_playbook_sync(source, agents, payload.message, thread_id, run_id=str(run.id))
         except Exception as exc:
             logger.exception("Chat run failed: run_id=%s", run.id)
             run.status = "failed"
@@ -99,7 +100,7 @@ async def chat_send(payload: ChatSendRequest, db: AsyncSession = Depends(get_db)
 
         from runtime.sync_runner import run_agent_sync
         try:
-            result = await run_agent_sync(agent, payload.message, thread_id)
+            result = await run_agent_sync(agent, payload.message, thread_id, run_id=str(run.id))
         except Exception as exc:
             logger.exception("Agent chat run failed: run_id=%s", run.id)
             run.status = "failed"
@@ -145,6 +146,8 @@ async def chat_send(payload: ChatSendRequest, db: AsyncSession = Depends(get_db)
         db.add(Message(run_id=run.id, role="assistant", content=result["output"], tokens_used=tokens, cost_usd=cost))
     run.status = "done"
     run.finished_at = datetime.utcnow()
+    run.langsmith_url = result.get("langsmith_url")
+    run.trace = result.get("trace") or []
     await db.commit()
 
     logger.info("Chat run done: run_id=%s source=%s session=%s tokens=%d cost=$%.6f",

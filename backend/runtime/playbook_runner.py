@@ -110,8 +110,14 @@ async def execute_playbook(run_id: str, input_text: str, thread_id: str | None =
 
             agent_name_set = {a.name for a in agents}
             final_messages: list = []
+            trace_events: list = []
             # Accumulate token counts per agent node for agent_done events
             agent_tokens: dict[str, int] = {}
+            langsmith_root_run_id: str | None = None
+
+            async def _emit(ev: dict) -> None:
+                trace_events.append(ev)
+                await publish_event(run_id, ev)
 
             cfg = {
                 "configurable": {"thread_id": thread_id or run_id},
@@ -127,6 +133,10 @@ async def execute_playbook(run_id: str, input_text: str, thread_id: str | None =
                 ename = event["name"]
                 edata = event.get("data", {})
                 meta = event.get("metadata", {})
+
+                if langsmith_root_run_id is None and etype == "on_chain_start":
+                    if not event.get("parent_ids"):
+                        langsmith_root_run_id = event.get("run_id")
 
                 # Collect final state — last on_chain_end with messages wins (top-level graph)
                 if etype == "on_chain_end":
@@ -147,7 +157,7 @@ async def execute_playbook(run_id: str, input_text: str, thread_id: str | None =
                     node = meta.get("langgraph_node", ename or "supervisor")
                     if node:
                         agent_tokens[node] = agent_tokens.get(node, 0) + total
-                    await publish_event(run_id, {
+                    await _emit({
                         "type": "llm_step",
                         "agent": node,
                         "tokens": total,
@@ -157,10 +167,10 @@ async def execute_playbook(run_id: str, input_text: str, thread_id: str | None =
 
                 # Agent lifecycle
                 if etype == "on_chain_start" and ename in agent_name_set:
-                    await publish_event(run_id, {"type": "agent_start", "agent": ename})
+                    await _emit({"type": "agent_start", "agent": ename})
 
                 if etype == "on_chain_end" and ename in agent_name_set:
-                    await publish_event(run_id, {
+                    await _emit({
                         "type": "agent_done",
                         "agent": ename,
                         "tokens": agent_tokens.get(ename, 0),
@@ -168,14 +178,14 @@ async def execute_playbook(run_id: str, input_text: str, thread_id: str | None =
 
                 # Routing decisions — supervisor calls transfer_to_<AgentName> tools
                 if etype == "on_tool_start" and ename.startswith("transfer_to_"):
-                    await publish_event(run_id, {
+                    await _emit({
                         "type": "routing",
                         "to": ename[len("transfer_to_"):],
                     })
 
                 # Real tool calls (not handoff tools)
                 if etype == "on_tool_start" and not ename.startswith("transfer_to_"):
-                    await publish_event(run_id, {
+                    await _emit({
                         "type": "tool_call",
                         "tool": ename,
                         "agent": meta.get("langgraph_node", ""),
@@ -183,7 +193,7 @@ async def execute_playbook(run_id: str, input_text: str, thread_id: str | None =
                     })
 
                 if etype == "on_tool_end" and not ename.startswith("transfer_to_"):
-                    await publish_event(run_id, {
+                    await _emit({
                         "type": "tool_result",
                         "tool": ename,
                         "agent": meta.get("langgraph_node", ""),
@@ -203,8 +213,9 @@ async def execute_playbook(run_id: str, input_text: str, thread_id: str | None =
 
             run.status = "done"
             run.finished_at = datetime.utcnow()
-            from runtime.coordinator import _fetch_langsmith_url
-            run.langsmith_url = await _fetch_langsmith_url(run_id)
+            from runtime.coordinator import _get_langsmith_url
+            run.langsmith_url = _get_langsmith_url()
+            run.trace = trace_events
             await db.commit()
             logger.info("Playbook run id=%s completed successfully", run_id)
 

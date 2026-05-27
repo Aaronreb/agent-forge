@@ -6,6 +6,7 @@ import {
   Handle, Position, MarkerType,
 } from "@xyflow/react";
 import { api, type Playbook, type ChatSession } from "@/lib/api";
+import ModelCombobox from "@/components/ModelCombobox";
 
 const theme = {
   bg: "#0a0b0f",
@@ -259,6 +260,7 @@ const styles = `
 function AgentsPage() {
   const [agents, setAgents] = useState<any[]>([]);
   const [availableTools, setAvailableTools] = useState<any[]>([]);
+  const [platformConfig, setPlatformConfig] = useState<{ models: string[]; channels: string[] }>({ models: [], channels: [] });
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<any>(null);
   const [saving, setSaving] = useState(false);
@@ -304,6 +306,7 @@ function AgentsPage() {
   useEffect(() => {
     api.listAgents().then(data => setAgents(data.map(normalizeAgent))).catch(() => {});
     api.listTools().then(setAvailableTools).catch(() => {});
+    api.getConfig().then(setPlatformConfig).catch(() => {});
   }, []);
 
   const openCreate = () => {
@@ -468,20 +471,17 @@ function AgentsPage() {
             <div className="form-row">
               <div className="form-group">
                 <label className="form-label">Model</label>
-                <select className="form-select" value={form.model} onChange={e => setForm({...form, model: e.target.value})}>
-                  <option value="gpt-5.4-mini-2026-03-17">gpt-5.4-mini-2026-03-17</option>
-                  <option value="gpt-4o">gpt-4o</option>
-                  <option value="gpt-4o-mini">gpt-4o-mini</option>
-                  <option value="gpt-4-turbo">gpt-4-turbo</option>
-                  <option value="claude-opus-4-7">claude-opus-4-7</option>
-                  <option value="claude-sonnet-4-6">claude-sonnet-4-6</option>
-                  <option value="claude-haiku-4-5-20251001">claude-haiku-4-5-20251001</option>
-                </select>
+                <ModelCombobox value={form.model} onChange={m => setForm({...form, model: m})} models={platformConfig.models} inputClassName="form-select" />
               </div>
               <div className="form-group">
                 <label className="form-label">Channel</label>
                 <select className="form-select" value={form.channel} onChange={e => setForm({...form, channel: e.target.value, chat_id: ""})}>
-                  <option>None</option><option>Telegram</option><option>Slack</option><option>WhatsApp</option>
+                  <option>None</option>
+                  {platformConfig.channels.map((c: string) => (
+                    <option key={c} value={c.charAt(0).toUpperCase() + c.slice(1)}>
+                      {c.charAt(0).toUpperCase() + c.slice(1)}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -1219,6 +1219,7 @@ function RunsPage() {
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<any>(null);
   const [messages, setMessages] = useState<any[]>([]);
+  const [runTrace, setRunTrace] = useState<any[]>([]);
   const [loadingDetail, setLoadingDetail] = useState(false);
 
   useEffect(() => {
@@ -1228,10 +1229,15 @@ function RunsPage() {
   const selectRun = async (run: any) => {
     setSelected(run);
     setMessages([]);
+    setRunTrace([]);
     setLoadingDetail(true);
     try {
-      const msgs = await api.getRunMessages(run.id);
+      const [msgs, trace] = await Promise.all([
+        api.getRunMessages(run.id),
+        api.getRunTrace(run.id).catch(() => []),
+      ]);
       setMessages(msgs);
+      setRunTrace(trace);
     } catch { setMessages([]); }
     finally { setLoadingDetail(false); }
   };
@@ -1397,6 +1403,17 @@ function RunsPage() {
           )}
         </div>
       </div>
+
+      {/* Execution trace */}
+      {(runTrace.length > 0 || loadingDetail) && (
+        <div style={{ marginTop: 28 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: theme.textMuted, textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 14 }}>Execution Trace</div>
+          {loadingDetail
+            ? <div style={{ color: theme.textMuted, fontSize: 13, fontStyle: "italic" }}>Loading trace…</div>
+            : <TracePanel events={runTrace} />
+          }
+        </div>
+      )}
     </div>
   );
 }
@@ -1794,7 +1811,6 @@ function ChatPage() {
 }
 
 function PlaybooksPage() {
-  const SUPERVISOR_MODELS = ["gpt-5.4-mini-2026-03-17", "gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "claude-opus-4-7", "claude-sonnet-4-6", "claude-haiku-4-5-20251001"];
   const TRIGGERS = ["manual", "telegram", "schedule"];
 
   const blank = (): Partial<Playbook> & { telegram_chat_id: string } => ({
@@ -1809,6 +1825,7 @@ function PlaybooksPage() {
   const [selected, setSelected] = useState<Playbook | null>(null);
   const [form, setForm] = useState<Partial<Playbook>>(blank());
   const [allAgents, setAllAgents] = useState<any[]>([]);
+  const [platformConfig, setPlatformConfig] = useState<{ models: string[]; channels: string[] }>({ models: [], channels: [] });
   const [saving, setSaving] = useState(false);
   const [deploying, setDeploying] = useState(false);
   const [runModal, setRunModal] = useState(false);
@@ -1819,6 +1836,7 @@ function PlaybooksPage() {
   useEffect(() => {
     api.listPlaybooks().then(setPlaybooks).catch(() => {});
     api.listAgents().then(setAllAgents).catch(() => {});
+    api.getConfig().then(setPlatformConfig).catch(() => {});
   }, []);
 
 
@@ -2007,9 +2025,7 @@ function PlaybooksPage() {
           <div className="form-row" style={{ marginBottom: 18 }}>
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label">Supervisor Model</label>
-              <select className="form-select" value={form.supervisor_model || "gpt-5.4-mini-2026-03-17"} onChange={e => setForm(f => ({ ...f, supervisor_model: e.target.value }))}>
-                {SUPERVISOR_MODELS.map(m => <option key={m} value={m}>{m}</option>)}
-              </select>
+              <ModelCombobox value={form.supervisor_model || "gpt-5.4-mini-2026-03-17"} onChange={m => setForm(f => ({ ...f, supervisor_model: m }))} models={platformConfig.models} inputClassName="form-select" />
             </div>
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label">Trigger</label>

@@ -27,18 +27,12 @@ logger = logging.getLogger(__name__)
 _RUNNING_TASKS: dict[str, asyncio.Task] = {}
 
 
-async def _fetch_langsmith_url(run_id: str) -> str | None:
-    """Fetch the LangSmith trace URL for a completed run. Non-fatal — returns None if tracing is off or call fails."""
+def _get_langsmith_url() -> str | None:
+    """Return the LangSmith project URL if tracing is enabled, otherwise None."""
     if settings.langchain_tracing_v2.lower() != "true" or not settings.langchain_api_key:
         return None
-    try:
-        from langsmith import Client
-        await asyncio.sleep(1)  # allow LangSmith to index the trace
-        ls_run = await asyncio.to_thread(Client(api_key=settings.langchain_api_key).read_run, run_id)
-        return ls_run.url
-    except Exception as exc:
-        logger.warning("Could not fetch LangSmith URL for run_id=%s: %s", run_id, exc)
-        return None
+    project = settings.langchain_project or "agentplatform"
+    return f"https://smith.langchain.com/projects/p?name={project}"
 
 
 def start_workflow_task(run_id: str, input_text: str, thread_id: str | None = None) -> asyncio.Task:
@@ -162,7 +156,7 @@ async def execute_workflow(run_id: str, input_text: str, thread_id: str | None =
 
             run.status = "done"
             run.finished_at = datetime.utcnow()
-            run.langsmith_url = await _fetch_langsmith_url(run_id)
+            run.langsmith_url = _get_langsmith_url()
             await db.commit()
             logger.info("Run %s completed", run_id)
 

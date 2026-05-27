@@ -7,59 +7,42 @@
 ![License](https://img.shields.io/badge/License-MIT-yellow)
 ![Docker](https://img.shields.io/badge/Docker-Compose-blue?logo=docker)
 
-A production-ready multi-agent AI platform: create agents, wire them into collaborative workflows with a visual builder, and interact with them over Telegram. Built on LangGraph, FastAPI, Next.js, and PostgreSQL.
+A production-ready multi-agent AI platform: create agents, wire them into collaborative workflows with a visual builder, orchestrate multi-agent business logic with Playbooks, and deploy over Telegram. Built on LangGraph, FastAPI, Next.js, and PostgreSQL.
+
+---
+
+## Demo
+
+> Replace the placeholders below with your screen recordings or GIFs.
+
+### Agent Studio
+<!-- demo-agent-studio -->
+_GIF or video coming soon_
+
+### Customer Support Triage Playbook
+<!-- demo-playbook -->
+_GIF or video coming soon_
+
+### Visual Workflow Builder
+<!-- demo-workflow-builder -->
+_GIF or video coming soon_
+
+### Live Monitor
+<!-- demo-live-monitor -->
+_GIF or video coming soon_
 
 ---
 
 ## Features
 
-- **Agent Studio** — Create agents with custom model, system prompt, tools, and memory
+- **Agent Studio** — Create agents with custom model, system prompt, tools, and memory. Model field accepts any name or pick from the configured list.
 - **Visual Workflow Builder** — Drag-and-drop canvas (React Flow) to wire agents into graphs with conditional routing
-- **Playbooks** — Form-based workflow creation using a supervisor agent pattern
+- **Playbooks** — Define multi-agent business logic in plain language; a supervisor agent coordinates the team at runtime
+- **Pre-seeded Playbook** — A ready-to-run **Customer Support Triage** playbook (3 agents) is loaded automatically on first `docker compose up`
+- **Config-driven models & channels** — Edit `backend/config.py` to control which models and channel types appear in dropdowns across the UI
 - **Live Monitor** — WebSocket-powered real-time log stream with token accounting
-- **Telegram Integration** — Wire any agent to a Telegram bot via webhook
-- **Scheduled Agents** — Run agents on a cron schedule via Celery beat
-- **Semantic Memory** — pgvector embeddings for long-term agent memory
-- **Docker-ready** — Single `docker compose up -d` launches all five services
-
----
-
-## Architecture
-
-```
-┌──────────────────────────────────────────────────────────────────┐
-│  Web UI (Next.js 14)                                             │
-│  /agents  /workflows  /monitor                                   │
-└─────────────┬──────────────────────────────┬────────────────────┘
-              │ REST                          │ WebSocket (/ws/logs)
-┌─────────────▼──────────────────────────────▼────────────────────┐
-│  FastAPI Backend                                                  │
-│  Routes: /agents  /workflows  /runs  /telegram/webhook           │
-│  ┌──────────────────────────────────────────────────────────┐   │
-│  │  Runtime Coordinator                                      │   │
-│  │  • Loads agents → create_react_agent (LangGraph)          │   │
-│  │  • Builds workflow StateGraph (supervisor / handoff)      │   │
-│  │  • Streams events via Redis Pub/Sub → WebSocket           │   │
-│  │  • Celery beat for scheduled agents                       │   │
-│  └──────────────────────────────────────────────────────────┘   │
-└──────────────────┬─────────────────────────┬────────────────────┘
-                   │                          │
-            PostgreSQL                    Redis
-            pgvector                      Pub/Sub + Celery
-                   │
-            Telegram Bot API (webhook)
-```
-
-### Key Design Decisions
-
-| Decision | Choice | Rationale |
-|---|---|---|
-| Single-agent runtime | `create_react_agent` | Pre-built ReAct loop — agents are simple to configure (model + tools) |
-| Multi-agent workflow | `StateGraph` (supervisor/handoff) | Composes agent graphs; supports cycles for feedback loops |
-| Persistence | PostgreSQL + pgvector | One service for relational data and semantic memory |
-| Real-time | Redis Pub/Sub + FastAPI WebSocket | Events published during graph execution stream straight to the UI |
-| External channel | Telegram webhook | Stateless, simple to self-host, works behind ngrok for local dev |
-| Scheduling | Celery beat | Standard Python solution; plugs into the same Redis broker |
+- **Telegram Integration** — Wire any agent or playbook to a Telegram bot via webhook
+- **Docker-ready** — Single `docker compose up -d` launches all services
 
 ---
 
@@ -68,23 +51,35 @@ A production-ready multi-agent AI platform: create agents, wire them into collab
 ```
 agentplatform/
 ├── backend/
-│   ├── api/              # FastAPI routes + WebSocket
-│   ├── agents/           # create_react_agent builder, tools, memory, guardrails
-│   ├── runtime/          # Coordinator, workflow builder, scheduler, event stream, seeder
-│   ├── messaging/        # Telegram bot adapter
-│   ├── models/           # SQLAlchemy ORM (Agent, Workflow, Run, Message)
-│   ├── workflow_templates/  # JSON definitions for pre-built templates
+│   ├── api/
+│   │   ├── routes/           # agents, workflows, runs, playbooks, chat, conversations, telegram, config_options
+│   │   └── websockets.py     # WebSocket live log stream
+│   ├── agents/
+│   │   ├── builder.py        # create_react_agent wrapper
+│   │   ├── tools/            # web_search, knowledge_base, dunning, subscriptions, etc.
+│   │   ├── memory.py
+│   │   └── guardrails.py
+│   ├── runtime/
+│   │   ├── coordinator.py    # core execution engine
+│   │   ├── workflow_builder.py
+│   │   ├── playbook_runner.py
+│   │   ├── seeder.py         # seeds built-in tools + Customer Support Triage playbook on startup
+│   │   └── event_stream.py   # Redis Pub/Sub publisher
+│   ├── messaging/
+│   │   └── telegram.py       # webhook handler + reply
+│   ├── models/               # SQLAlchemy ORM (Agent, Workflow, Playbook, Run, Message, Conversation)
+│   ├── config.py             # settings + AVAILABLE_MODELS + AVAILABLE_CHANNELS
 │   └── tests/
 ├── frontend/
 │   ├── app/
-│   │   ├── agents/       # Agent CRUD
-│   │   ├── workflows/    # Visual workflow builder (React Flow)
-│   │   └── monitor/      # Live logs + message history
+│   │   ├── agents/           # Agent CRUD
+│   │   ├── workflows/        # Visual workflow builder
+│   │   └── monitor/          # Live logs + message history
 │   ├── components/
-│   │   ├── workflow/     # WorkflowCanvas, AgentNode, ConditionEdge
-│   │   └── monitor/      # LogStream, MessageTimeline
-│   └── lib/              # Typed API client, WebSocket hook
-├── alembic/              # DB migrations
+│   │   ├── ModelCombobox.tsx # free-text model input with config-driven suggestions
+│   │   ├── workflow/         # WorkflowCanvas, AgentNode, ConditionEdge, NodePalette
+│   │   └── monitor/          # LogStream, MessageTimeline
+│   └── lib/                  # Typed API client, WebSocket hook
 ├── docker-compose.yml
 └── .env.example
 ```
@@ -96,7 +91,7 @@ agentplatform/
 ### 1. Clone and configure
 
 ```bash
-git clone <repo-url> agentplatform
+git clone https://github.com/Aaronreb/agent-forge.git agentplatform
 cd agentplatform
 cp .env.example .env
 # Edit .env — add OPENAI_API_KEY or ANTHROPIC_API_KEY
@@ -108,13 +103,15 @@ cp .env.example .env
 docker compose up -d
 ```
 
-Services: `postgres` (5432), `redis` (6379), `backend` (8000), `frontend` (3000), `celery` (worker+beat).
+Services: `postgres` (5432), `redis` (6379), `backend` (8000), `frontend` (3000).
 
-The backend automatically creates and migrates all database tables on first startup.
+The backend automatically creates and migrates all database tables on first startup, then seeds the **Customer Support Triage** playbook and all built-in tools.
 
 ### 3. Open the UI
 
 Navigate to **http://localhost:3000**
+
+A **Customer Support Triage** playbook with 3 agents is pre-loaded and ready to run — no setup needed.
 
 ### 4. Connect Telegram (optional)
 
@@ -126,88 +123,76 @@ ngrok http 8000
 curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook?url=https://<ngrok-id>.ngrok.io/telegram/webhook"
 ```
 
-Create a Channel of type `telegram` in the UI, attach it to an agent, and messages sent to your bot will trigger that agent.
+Create a Channel of type `telegram` in the UI, attach it to an agent or playbook, and messages sent to your bot will trigger it.
 
 ---
 
-## Development
+## Configuring Models & Channels
 
-### Backend
+Edit `backend/config.py` to control what appears in the UI dropdowns:
 
-```bash
-cd backend
-pip install -r requirements.txt
-# Run locally (needs postgres + redis running)
-uvicorn api.main:app --reload
+```python
+AVAILABLE_MODELS = [
+    "gpt-5.4-mini-2026-03-17",
+    "gpt-4o",
+    "gpt-4o-mini",
+    "claude-sonnet-4-6",
+    # add any model name here
+]
+
+AVAILABLE_CHANNELS = ["telegram", "slack", "whatsapp"]
 ```
 
-#### Run tests
+The model field in the UI also accepts free text — type any model name not in the list and it will be used as-is.
 
-```bash
-cd backend
-pytest
-```
+---
 
-Tests require a local PostgreSQL instance at `localhost:5432` with database `agentdb_test` (same user/pass as `.env`):
-```bash
-createdb -U agent agentdb_test
-```
+## Pre-Seeded Playbook
 
-### Frontend
+On first startup, the platform automatically creates a **Customer Support Triage** playbook with three agents:
 
-```bash
-cd frontend
-npm install
-npm run dev   # http://localhost:3000
-```
+| Agent | Role | Tools |
+|---|---|---|
+| 🎫 **Ticket Classifier** | Classifies the ticket — outputs category, priority, sentiment, and summary as JSON | none |
+| 🔍 **Resolution Finder** | Searches the KB twice + logs the ticket to the tracker | `knowledge_base_search`, `ticket_logger` |
+| ✍️ **Response Drafter** | Writes an empathetic, ready-to-send customer reply | none |
+
+**Flow:** Ticket → Classifier (JSON) → Resolution Finder (KB search + log) → Response Drafter → final reply prefixed with `Priority | Category | Sentiment`.
+
+To test: open **Playbooks** → **Customer Support Triage** → **Run** → type a support query such as *"I was charged twice this month and need a refund"*.
 
 ---
 
 ## End-to-End Demo
 
-1. Open the UI → **Agents** → create two agents:
-   - **ResearchAgent**: model `gpt-4o`, tool `web_search`, system prompt: *"You are a research assistant. Use web_search to find information."*
-   - **SummaryAgent**: model `gpt-4o`, no tools, system prompt: *"You are a summarizer. Write a concise report from the research provided."*
+### Playbook Demo (pre-seeded)
 
-2. **Workflows** → click **Research & Report** template → agents are pre-placed on the canvas → save as *"Research & Report Demo"*.
+1. Open **http://localhost:3000** → **Playbooks**
+2. Select **Customer Support Triage** — it's already deployed and ready
+3. Click **Run**, type: *"I was charged twice this month and need a refund"*
+4. Watch the 3-step pipeline: Ticket Classifier outputs JSON → Resolution Finder searches KB and logs the ticket → Response Drafter writes the customer reply
+5. Final output includes a `Priority | Category | Sentiment` header followed by the ready-to-send response
+6. Open **Monitor** to see the full message trace with token counts
 
-3. **Monitor** → select the workflow → type *"What is LangGraph?"* → **Launch**.
+### Visual Workflow Demo
 
-4. Watch the live event stream: ResearchAgent calls web_search, then hands off to SummaryAgent.
+1. **Agents** → create two agents:
+   - **ResearchAgent** — model `gpt-5.4-mini-2026-03-17`, no tools, prompt: *"You are a research assistant. Gather and organise detailed, accurate information on the given topic."*
+   - **SummaryAgent** — model `gpt-5.4-mini-2026-03-17`, no tools, prompt: *"You are a summarization expert. Produce a clear, concise report from the research provided."*
+2. **Workflows** → **New Workflow** → drag both agents onto the canvas and connect them
+3. **Monitor** → select the workflow → type *"Explain how LangGraph works"* → click **Launch**
+4. Watch the live event stream: ResearchAgent drafts the research, then hands off to SummaryAgent which produces the final report
 
-5. Check the **Message History** panel — all inter-agent messages with token counts are persisted.
+### Telegram Demo
 
-6. If Telegram is configured: send the same question to your bot and receive the summary as a reply.
-
----
-
-## Pre-Built Workflow Templates
-
-| Template | Agents | Flow |
-|---|---|---|
-| Research & Report | ResearchAgent → SummaryAgent | Linear: research then summarise |
-| Customer Support Triage | TriageAgent ↔ SpecialistAgent | Conditional with feedback loop |
-
----
-
-## How to Add a New Workflow Template
-
-1. Create `backend/workflow_templates/my_template.json`:
-```json
-{
-  "slug": "my-template",
-  "name": "My Template",
-  "description": "What it does.",
-  "definition": {
-    "nodes": [
-      { "key": "agent_a", "label": "AgentA", "role": "...", "system_prompt": "...", "model": "gpt-4o", "tools": [], "is_entry": true, "position_x": 100, "position_y": 200 }
-    ],
-    "edges": []
-  }
-}
-```
-2. Restart the backend — the seeder picks it up automatically on startup.
-3. The template appears in the Workflows page gallery.
+1. Set `TELEGRAM_BOT_TOKEN` in `.env` and restart
+2. Expose the backend: `ngrok http 8000`
+3. Register the webhook:
+   ```bash
+   curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook?url=https://<ngrok-id>.ngrok.io/telegram/webhook"
+   ```
+4. In the UI, go to your agent or playbook → **Channels** → add a Telegram channel
+5. Send a message to your Telegram bot — the agent replies directly in chat
 
 ---
 
@@ -216,23 +201,26 @@ npm run dev   # http://localhost:3000
 1. Create `backend/messaging/my_channel.py` with:
    - `async def send(chat_id, text)` — sends a reply
    - A webhook handler function
-2. Add the channel type string to your UI (the `Channel.type` field is free-form text).
-3. Register a FastAPI router in `api/main.py` at `/my_channel/webhook`.
-4. In `messaging/telegram.py`, use as a reference for how to look up the agent and call `execute_workflow`.
+2. Register a FastAPI router in `api/main.py` at `/my_channel/webhook`
+3. Add the channel type to `AVAILABLE_CHANNELS` in `backend/config.py`
+4. Use `messaging/telegram.py` as a reference for looking up the agent and calling `execute_workflow`
 
 ---
 
-## API Reference (summary)
+## API Reference
 
 | Method | Path | Description |
 |---|---|---|
 | GET/POST | `/agents` | List / create agents |
 | GET/PUT/DELETE | `/agents/{id}` | Get / update / delete agent |
 | GET | `/agents/tools/list` | Available tools |
+| GET/POST | `/agents/channels` | List / create channels |
 | GET/POST | `/workflows` | List / create workflows |
-| GET | `/workflows/templates` | Pre-built templates |
+| GET/POST | `/playbooks` | List / create playbooks |
+| POST | `/playbooks/{id}/deploy` | Activate a playbook |
 | POST | `/runs` | Start a workflow run |
 | GET | `/runs/{id}/messages` | Message history for a run |
+| GET | `/config/options` | Available models and channel types |
 | WS | `/ws/logs?run_id=X` | Live event stream |
 | POST | `/telegram/webhook` | Telegram bot webhook |
 

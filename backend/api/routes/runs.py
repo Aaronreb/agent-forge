@@ -246,6 +246,15 @@ async def get_run_messages(run_id: str, db: AsyncSession = Depends(get_db)):
     return [_msg_out(m) for m in messages]
 
 
+@router.get("/{run_id}/trace")
+async def get_run_trace(run_id: str, db: AsyncSession = Depends(get_db)):
+    """Return the saved trace events for a run."""
+    run = await db.get(Run, uuid.UUID(run_id))
+    if not run:
+        raise HTTPException(404, "Run not found")
+    return run.trace or []
+
+
 @router.get("/{run_id}/steps")
 async def get_run_steps(run_id: str, db: AsyncSession = Depends(get_db)):
     """

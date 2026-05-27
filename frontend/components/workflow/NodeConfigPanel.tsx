@@ -2,8 +2,7 @@
 import { useEffect, useState } from "react";
 import { Node } from "@xyflow/react";
 import { api, Agent, StartNodeConfig, RouterNodeConfig } from "@/lib/api";
-
-const MODELS = ["gpt-4o", "gpt-4o-mini", "claude-sonnet-4-6", "claude-haiku-4-5-20251001"];
+import ModelCombobox from "@/components/ModelCombobox";
 
 const NODE_TYPE_LABELS: Record<string, string> = {
   startNode: "Start",
@@ -231,13 +230,18 @@ function RouterConfig({
   cfg: RouterNodeConfig;
   onSave: (p: Record<string, unknown>) => void;
 }) {
-  const [prompt, setPrompt] = useState<string>((cfg.routing_prompt ?? cfg.router_prompt ?? "") as string);
-  const [model, setModel] = useState<string>((cfg.router_model ?? "gpt-4o-mini") as string);
+  const [prompt, setPrompt] = useState<string>((cfg.routing_prompt ?? "") as string);
+  const [model, setModel] = useState<string>((cfg.router_model ?? "gpt-5.4-mini-2026-03-17") as string);
+  const [models, setModels] = useState<string[]>([]);
+
+  useEffect(() => {
+    api.getConfig().then((c) => setModels(c.models)).catch(() => {});
+  }, []);
 
   // Sync when a different node is selected
   useEffect(() => {
-    setPrompt((cfg.routing_prompt ?? cfg.router_prompt ?? "") as string);
-    setModel((cfg.router_model ?? "gpt-4o-mini") as string);
+    setPrompt((cfg.routing_prompt ?? "") as string);
+    setModel((cfg.router_model ?? "gpt-5.4-mini-2026-03-17") as string);
   }, [nodeId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleModelChange = (val: string) => {
@@ -260,13 +264,11 @@ function RouterConfig({
       </div>
       <div>
         <label className="text-xs text-gray-400 font-medium block mb-1">LLM model</label>
-        <select
+        <ModelCombobox
           value={model}
-          onChange={(e) => handleModelChange(e.target.value)}
-          className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm text-white outline-none focus:ring-2 ring-amber-500"
-        >
-          {MODELS.map((m) => <option key={m} value={m}>{m}</option>)}
-        </select>
+          onChange={handleModelChange}
+          models={models}
+        />
       </div>
       <div className="bg-gray-800/60 border border-gray-700 rounded px-3 py-2">
         <div className="text-xs text-gray-400 font-medium mb-1">How routing works</div>

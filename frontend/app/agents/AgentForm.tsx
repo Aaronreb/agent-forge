@@ -1,6 +1,7 @@
 "use client";
-import { useState } from "react";
-import { Agent, Tool } from "@/lib/api";
+import { useState, useEffect } from "react";
+import { api, Agent, Tool, PlatformConfig } from "@/lib/api";
+import ModelCombobox from "@/components/ModelCombobox";
 
 interface Props {
   agent?: Agent;
@@ -9,13 +10,16 @@ interface Props {
   onCancel: () => void;
 }
 
-const MODELS = ["gpt-4o", "gpt-4o-mini", "claude-sonnet-4-6", "claude-haiku-4-5-20251001"];
-
 export default function AgentForm({ agent, tools, onSave, onCancel }: Props) {
   const [name, setName] = useState(agent?.name ?? "");
   const [role, setRole] = useState(agent?.role ?? "assistant");
   const [systemPrompt, setSystemPrompt] = useState(agent?.system_prompt ?? "");
-  const [model, setModel] = useState(agent?.model ?? "gpt-4o");
+  const [model, setModel] = useState(agent?.model ?? "gpt-5.4-mini-2026-03-17");
+  const [config, setConfig] = useState<PlatformConfig>({ models: [], channels: [] });
+
+  useEffect(() => {
+    api.getConfig().then(setConfig).catch(() => {});
+  }, []);
   const [memoryEnabled, setMemoryEnabled] = useState(agent?.memory_enabled ?? false);
   const [scheduleCron, setScheduleCron] = useState(agent?.schedule_cron ?? "");
   const [maxTokens, setMaxTokens] = useState<number>(
@@ -70,10 +74,12 @@ export default function AgentForm({ agent, tools, onSave, onCancel }: Props) {
 
       <label className="block">
         <span className="text-sm text-gray-400">Model</span>
-        <select value={model} onChange={(e) => setModel(e.target.value)}
-          className="mt-1 w-full bg-gray-800 rounded px-3 py-2 text-sm outline-none focus:ring-2 ring-indigo-500">
-          {MODELS.map((m) => <option key={m}>{m}</option>)}
-        </select>
+        <ModelCombobox
+          value={model}
+          onChange={setModel}
+          models={config.models}
+          className="mt-1"
+        />
       </label>
 
       <label className="block">

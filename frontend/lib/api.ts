@@ -40,6 +40,7 @@ export const api = {
   cancelRun: (id: string) => req<{ status: string }>(`/runs/${id}/cancel`, { method: "POST" }),
   getRunMessages: (id: string) => req<Message[]>(`/runs/${id}/messages`),
   getRunSteps: (id: string) => req<RunStep[]>(`/runs/${id}/steps`),
+  getRunTrace: (id: string) => req<any[]>(`/runs/${id}/trace`),
 
   // Playbooks
   listPlaybooks: () => req<Playbook[]>("/playbooks"),
@@ -62,11 +63,19 @@ export const api = {
     req<ChatSession[]>(`/chat/sessions?source_type=${source_type}&source_id=${source_id}`),
   getChatSessionMessages: (session_id: string) =>
     req<ChatSessionMessage[]>(`/chat/session/${session_id}/messages`),
+
+  // Config
+  getConfig: () => req<PlatformConfig>("/config/options"),
 };
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
+
+export interface PlatformConfig {
+  models: string[];
+  channels: string[];
+}
 
 export interface Agent {
   id: string;

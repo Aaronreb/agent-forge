@@ -19,7 +19,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
-from api.routes import agents, workflows, runs, telegram, conversations, playbooks, chat
+from api.routes import agents, workflows, runs, telegram, conversations, playbooks, chat, config_options
 from api.websockets import router as ws_router
 from db import engine
 from models import Base
@@ -47,6 +47,7 @@ app.include_router(telegram.router, prefix="/telegram", tags=["telegram"])
 app.include_router(conversations.router, prefix="/conversations", tags=["conversations"])
 app.include_router(playbooks.router, prefix="/playbooks", tags=["playbooks"])
 app.include_router(chat.router, prefix="/chat", tags=["chat"])
+app.include_router(config_options.router, prefix="/config", tags=["config"])
 app.include_router(ws_router)
 
 
@@ -82,6 +83,7 @@ async def startup():
             "ALTER TABLE agents ADD COLUMN IF NOT EXISTS is_live BOOLEAN NOT NULL DEFAULT FALSE",
             "ALTER TABLE runs ADD COLUMN IF NOT EXISTS agent_id UUID",
             "ALTER TABLE runs ADD COLUMN IF NOT EXISTS langsmith_url VARCHAR(512)",
+            "ALTER TABLE runs ADD COLUMN IF NOT EXISTS trace JSONB",
         ]
         for stmt in migrations:
             try:

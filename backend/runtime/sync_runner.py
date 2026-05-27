@@ -48,8 +48,8 @@ def _get_tool_calls(msg) -> list[dict]:
     return result
 
 
-async def run_agent_sync(agent, message: str, session_id: str) -> dict:
-    """Run a single agent directly (no supervisor). Returns {output, trace, tokens}."""
+async def run_agent_sync(agent, message: str, session_id: str, run_id: str | None = None) -> dict:
+    """Run a single agent directly (no supervisor). Returns {output, trace, tokens, langsmith_url}."""
     tools = [TOOL_REGISTRY[t.name] for t in agent.tools if t.name in TOOL_REGISTRY]
     graph = create_react_agent(
         model=_get_llm(agent.model),
@@ -86,11 +86,13 @@ async def run_agent_sync(agent, message: str, session_id: str) -> dict:
         for m in new_msgs
     )
     trace.append({"type": "run_done", "output": output[:120], "tokens": total_tokens})
-    return {"output": output, "trace": trace, "tokens": total_tokens}
+
+    from runtime.coordinator import _get_langsmith_url
+    return {"output": output, "trace": trace, "tokens": total_tokens, "langsmith_url": _get_langsmith_url()}
 
 
-async def run_playbook_sync(playbook, agents: list, message: str, session_id: str) -> dict:
-    """Build supervisor graph and invoke it. Returns {output, trace, tokens}."""
+async def run_playbook_sync(playbook, agents: list, message: str, session_id: str, run_id: str | None = None) -> dict:
+    """Build supervisor graph and invoke it. Returns {output, trace, tokens, langsmith_url}."""
     subagents = []
     for a in agents:
         tools = [TOOL_REGISTRY[t.name] for t in a.tools if t.name in TOOL_REGISTRY]
@@ -153,7 +155,9 @@ async def run_playbook_sync(playbook, agents: list, message: str, session_id: st
     trace.append({"type": "run_done", "output": output[:120], "tokens": total_tokens})
 
     logger.info("Trace built: session=%s events=%d tokens=%d", session_id, len(trace), total_tokens)
-    return {"output": output, "trace": trace, "tokens": total_tokens}
+
+    from runtime.coordinator import _get_langsmith_url
+    return {"output": output, "trace": trace, "tokens": total_tokens, "langsmith_url": _get_langsmith_url()}
 
 
 def _extract_output_and_trace(messages: list) -> tuple[str, list]:
