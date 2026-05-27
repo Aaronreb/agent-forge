@@ -13,7 +13,7 @@ A production-ready multi-agent AI platform: create agents, wire them into collab
 
 ## Demo
 
-> Replace the placeholders below with your screen recordings or GIFs.
+
 
 ### Agent Studio
 <!-- demo-agent-studio -->
