@@ -1,9 +1,10 @@
 import os
+import tempfile
 from datetime import datetime
 from langchain_core.tools import tool
 from openpyxl import load_workbook, Workbook
 
-_LEDGER_PATH = "/home/konsultera/Aaron/Projects/agentplatform/dunning_ledger.xlsx"
+_LEDGER_PATH = os.path.join(tempfile.gettempdir(), "dunning_ledger.xlsx")
 _HEADERS = [
     "Subscription ID", "Transaction ID", "Timestamp",
     "Decline Code", "Decline Type", "LTV Tier", "Tenure Months",
