@@ -18,6 +18,7 @@ import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
+from runtime.coordinator import _get_langsmith_url
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from pydantic import BaseModel
@@ -71,7 +72,7 @@ def _run_out(run: Run, workflow_name: str | None = None, tokens: int = 0, cost: 
         "duration_seconds": _duration(run),
         "tokens_used": tokens,
         "cost_usd": cost,
-        "langsmith_url": run.langsmith_url,
+        "langsmith_url": run.langsmith_url or _get_langsmith_url(),
     }
 
 

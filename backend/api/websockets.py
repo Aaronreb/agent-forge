@@ -16,7 +16,11 @@ async def ws_logs(websocket: WebSocket, run_id: str = ""):
 
     try:
         if run_id:
+            # Subscribe before fetching history so no new events are missed.
             await pubsub.subscribe(channel)
+            history = await r.lrange(f"runs:{run_id}:history", 0, -1)
+            for item in history:
+                await websocket.send_text(item.decode() if isinstance(item, bytes) else item)
         else:
             await pubsub.psubscribe("runs:*:events")
 

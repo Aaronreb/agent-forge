@@ -157,14 +157,17 @@ async def execute_workflow(run_id: str, input_text: str, thread_id: str | None =
             run.status = "done"
             run.finished_at = datetime.utcnow()
             run.langsmith_url = _get_langsmith_url()
-            await db.commit()
-            logger.info("Run %s completed", run_id)
 
             await publish_event(run_id, {
                 "type": "run_done",
                 "run_id": run_id,
                 "output": final_state.get("final_output", ""),
             })
+
+            from runtime.event_stream import get_run_events
+            run.trace = await get_run_events(run_id)
+            await db.commit()
+            logger.info("Run %s completed", run_id)
 
             return final_state.get("final_output", "")
 

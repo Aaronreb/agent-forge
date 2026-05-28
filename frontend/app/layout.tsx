@@ -3,7 +3,7 @@ import "./globals.css";
 import "@xyflow/react/dist/style.css";
 
 export const metadata: Metadata = {
-  title: "AI Platform",
+  title: "Agent Forge",
   description: "Multi-agent AI workflow platform",
 };
 

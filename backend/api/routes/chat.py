@@ -135,7 +135,8 @@ async def chat_send(payload: ChatSendRequest, db: AsyncSession = Depends(get_db)
             logger.exception("Workflow chat run failed: run_id=%s", run.id)
             raise HTTPException(500, str(exc))
 
-        return {"run_id": str(run.id), "output": output or "", "trace": [], "tokens": 0}
+        await db.refresh(run)
+        return {"run_id": str(run.id), "output": output or "", "trace": run.trace or [], "tokens": 0}
 
     else:
         raise HTTPException(400, f"Unsupported source_type '{payload.source_type}'")

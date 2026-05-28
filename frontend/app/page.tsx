@@ -1248,8 +1248,9 @@ function RunsPage() {
   const successRate = runs.length > 0 ? Math.round(doneCount / runs.length * 100) : 0;
 
   const fmtDate = (iso: string) => {
-    const d = new Date(iso);
-    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) + " " + d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+    const utc = iso && !iso.endsWith("Z") && !iso.includes("+") ? iso + "Z" : iso;
+    const d = new Date(utc);
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "Asia/Kolkata" }) + " " + d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" });
   };
 
   const triggerBadge = (trigger: string) => {
@@ -1683,8 +1684,9 @@ function ChatPage() {
 
   const selectedSource = sources.find(s => s.id === sourceId);
   const fmtDate = (iso: string) => {
-    const d = new Date(iso);
-    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) + " " + d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+    const utc = iso && !iso.endsWith("Z") && !iso.includes("+") ? iso + "Z" : iso;
+    const d = new Date(utc);
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "Asia/Kolkata" }) + " " + d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" });
   };
 
   return (
@@ -2130,7 +2132,7 @@ export default function App() {
         <div className="sidebar">
           <div className="logo">
             <div className="logo-icon">⚡</div>
-            <span>AI Platform</span>
+            <span>Agent Forge</span>
           </div>
           <div className="nav-section">
             <div className="nav-label">Platform</div>

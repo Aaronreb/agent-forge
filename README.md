@@ -17,19 +17,15 @@ A production-ready multi-agent AI platform: create agents, wire them into collab
 
 ### Agent Studio
 <!-- demo-agent-studio -->
-_GIF or video coming soon_
+![Agent Studio](docs/demos/agent-studio.gif)
 
 ### Customer Support Triage Playbook
 <!-- demo-playbook -->
-_GIF or video coming soon_
+![Customer Support Triage Playbook](docs/demos/playbook.gif)
 
 ### Visual Workflow Builder
 <!-- demo-workflow-builder -->
-_GIF or video coming soon_
-
-### Live Monitor
-<!-- demo-live-monitor -->
-_GIF or video coming soon_
+![Visual Workflow Builder](docs/demos/workflow-builder.gif)
 
 ---
 
