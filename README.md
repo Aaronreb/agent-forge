@@ -1,4 +1,4 @@
-# AgentPlatform
+# Agent-forge
 
 ![Python](https://img.shields.io/badge/Python-3.11-blue?logo=python)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.111-green?logo=fastapi)
