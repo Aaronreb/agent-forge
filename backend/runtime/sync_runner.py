@@ -12,8 +12,7 @@ from langchain_core.messages import HumanMessage
 from langgraph.prebuilt import create_react_agent
 from langgraph_supervisor import create_supervisor
 
-from agents.builder import _get_llm
-from agents.tools import TOOL_REGISTRY
+from agents.builder import _get_llm, compile_agent, mcp_tools_context
 from runtime.memory import CHECKPOINTER
 
 logger = logging.getLogger(__name__)
@@ -50,35 +49,36 @@ def _get_tool_calls(msg) -> list[dict]:
 
 async def run_agent_sync(agent, message: str, session_id: str, run_id: str | None = None) -> dict:
     """Run a single agent directly (no supervisor). Returns {output, trace, tokens, langsmith_url}."""
-    tools = [TOOL_REGISTRY[t.name] for t in agent.tools if t.name in TOOL_REGISTRY]
-    graph = create_react_agent(
-        model=_get_llm(agent.model),
-        tools=tools,
-        prompt=agent.system_prompt or f"You are {agent.name}, a helpful {agent.role}.",
-        checkpointer=CHECKPOINTER,
-    )
+    async with mcp_tools_context([agent]) as tools_by_agent_id:
+        tools = tools_by_agent_id.get(str(agent.id), [])
+        graph = create_react_agent(
+            model=_get_llm(agent.model),
+            tools=tools,
+            prompt=agent.system_prompt or f"You are {agent.name}, a helpful {agent.role}.",
+            checkpointer=CHECKPOINTER,
+        )
 
-    config = {"configurable": {"thread_id": session_id}}
-    prior_count = 0
-    try:
-        prior_state = await graph.aget_state(config)
-        if prior_state and prior_state.values:
-            prior_count = len(prior_state.values.get("messages", []))
-    except Exception:
+        config = {"configurable": {"thread_id": session_id}}
         prior_count = 0
+        try:
+            prior_state = await graph.aget_state(config)
+            if prior_state and prior_state.values:
+                prior_count = len(prior_state.values.get("messages", []))
+        except Exception:
+            prior_count = 0
 
-    logger.info("Invoking agent directly: agent=%s session=%s prior_msgs=%d", agent.name, session_id, prior_count)
+        logger.info("Invoking agent directly: agent=%s session=%s prior_msgs=%d", agent.name, session_id, prior_count)
 
-    result = await graph.ainvoke(
-        {"messages": [HumanMessage(content=message)]},
-        config=config,
-    )
-    print("AGENT RESULT:", result)
+        result = await graph.ainvoke(
+            {"messages": [HumanMessage(content=message)]},
+            config=config,
+        )
+        print("AGENT RESULT:", result)
 
-    all_msgs = result.get("messages", [])
-    new_msgs = all_msgs[prior_count:] if prior_count < len(all_msgs) else all_msgs
-    if not new_msgs:
-        new_msgs = all_msgs
+        all_msgs = result.get("messages", [])
+        new_msgs = all_msgs[prior_count:] if prior_count < len(all_msgs) else all_msgs
+        if not new_msgs:
+            new_msgs = all_msgs
 
     output, trace = _extract_output_and_trace(new_msgs)
     total_tokens = sum(
@@ -93,59 +93,57 @@ async def run_agent_sync(agent, message: str, session_id: str, run_id: str | Non
 
 async def run_playbook_sync(playbook, agents: list, message: str, session_id: str, run_id: str | None = None) -> dict:
     """Build supervisor graph and invoke it. Returns {output, trace, tokens, langsmith_url}."""
-    subagents = []
-    for a in agents:
-        tools = [TOOL_REGISTRY[t.name] for t in a.tools if t.name in TOOL_REGISTRY]
-        subagents.append(create_react_agent(
-            model=_get_llm(a.model),
-            tools=tools,
-            prompt=a.system_prompt or f"You are {a.name}, a helpful {a.role}.",
-            name=_safe_name(a.name),
-        ))
+    async with mcp_tools_context(agents) as tools_by_agent_id:
+        subagents = []
+        for a in agents:
+            tools = tools_by_agent_id.get(str(a.id), [])
+            subagents.append(create_react_agent(
+                model=_get_llm(a.model),
+                tools=tools,
+                prompt=a.system_prompt or f"You are {a.name}, a helpful {a.role}.",
+                name=_safe_name(a.name),
+            ))
 
-    supervisor_llm = _get_llm(playbook.supervisor_model or "gpt-5.4-mini-2026-03-17")
-    app = create_supervisor(
-        subagents,
-        model=supervisor_llm,
-        prompt=playbook.playbook_text or "",
-    ).compile(checkpointer=CHECKPOINTER)
+        supervisor_llm = _get_llm(playbook.supervisor_model or "gpt-5.4-mini-2026-03-17")
+        app = create_supervisor(
+            subagents,
+            model=supervisor_llm,
+            prompt=playbook.playbook_text or "",
+        ).compile(checkpointer=CHECKPOINTER)
 
-    config = {"configurable": {"thread_id": session_id}}
+        config = {"configurable": {"thread_id": session_id}}
 
-    # Snapshot message count before invocation so we only trace NEW messages.
-    # ainvoke() with MemorySaver returns the full accumulated state for the thread.
-    prior_count = 0
-    try:
-        prior_state = await app.aget_state(config)
-        if prior_state and prior_state.values:
-            prior_count = len(prior_state.values.get("messages", []))
-    except Exception:
         prior_count = 0
+        try:
+            prior_state = await app.aget_state(config)
+            if prior_state and prior_state.values:
+                prior_count = len(prior_state.values.get("messages", []))
+        except Exception:
+            prior_count = 0
 
-    logger.info("Invoking supervisor: playbook=%s agents=%d session=%s prior_msgs=%d",
-                playbook.name, len(subagents), session_id, prior_count)
+        logger.info("Invoking supervisor: playbook=%s agents=%d session=%s prior_msgs=%d",
+                    playbook.name, len(subagents), session_id, prior_count)
 
-    result = await app.ainvoke(
-        {"messages": [HumanMessage(content=message)]},
-        config=config,
-    )
-    print("RESULT:", result)
+        result = await app.ainvoke(
+            {"messages": [HumanMessage(content=message)]},
+            config=config,
+        )
+        print("RESULT:", result)
 
-    all_msgs = result.get("messages", [])
-    # Only process messages added in this invocation
-    new_msgs = all_msgs[prior_count:] if prior_count < len(all_msgs) else all_msgs
-    if not new_msgs:
-        new_msgs = all_msgs  # fallback: state was reset between calls
+        all_msgs = result.get("messages", [])
+        new_msgs = all_msgs[prior_count:] if prior_count < len(all_msgs) else all_msgs
+        if not new_msgs:
+            new_msgs = all_msgs
 
-    logger.info("Invocation complete: session=%s total=%d new=%d",
-                session_id, len(all_msgs), len(new_msgs))
-    for i, m in enumerate(new_msgs):
-        tcs = _get_tool_calls(m)
-        logger.debug("  msg[%d] type=%-6s name=%-20s tool_calls=%s content_len=%d",
-                     i, m.type,
-                     getattr(m, "name", None) or "-",
-                     [t["name"] for t in tcs],
-                     len(str(m.content or "")))
+        logger.info("Invocation complete: session=%s total=%d new=%d",
+                    session_id, len(all_msgs), len(new_msgs))
+        for i, m in enumerate(new_msgs):
+            tcs = _get_tool_calls(m)
+            logger.debug("  msg[%d] type=%-6s name=%-20s tool_calls=%s content_len=%d",
+                         i, m.type,
+                         getattr(m, "name", None) or "-",
+                         [t["name"] for t in tcs],
+                         len(str(m.content or "")))
 
     output, trace = _extract_output_and_trace(new_msgs)
     total_tokens = sum(

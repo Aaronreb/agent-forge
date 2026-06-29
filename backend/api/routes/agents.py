@@ -24,6 +24,7 @@ from pydantic import BaseModel
 
 from db import get_db
 from models import Agent, Tool, Channel
+from sqlalchemy.orm import contains_eager
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -286,7 +287,10 @@ async def test_agent(agent_id: str, payload: AgentTestRequest, db: AsyncSession 
 
     result = await db.execute(
         select(Agent)
-        .options(selectinload(Agent.tools), selectinload(Agent.channels))
+        .options(
+            selectinload(Agent.tools).selectinload(Tool.mcp_server),
+            selectinload(Agent.channels),
+        )
         .where(Agent.id == uuid.UUID(agent_id))
     )
     agent = result.scalar_one_or_none()
@@ -299,11 +303,12 @@ async def test_agent(agent_id: str, payload: AgentTestRequest, db: AsyncSession 
 
     try:
         from langchain_core.messages import HumanMessage
-        from agents.builder import build_agent_graph
+        from agents.builder import compile_agent, mcp_tools_context
 
-        graph = build_agent_graph(agent)
         start = time.time()
-        state = await graph.ainvoke({"messages": [HumanMessage(content=payload.message)]})
+        async with mcp_tools_context([agent], db) as tools_by_agent_id:
+            graph = compile_agent(agent, tools_by_agent_id.get(str(agent.id), []))
+            state = await graph.ainvoke({"messages": [HumanMessage(content=payload.message)]})
         duration = round(time.time() - start, 2)
 
         messages = []

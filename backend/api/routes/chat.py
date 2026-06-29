@@ -18,7 +18,7 @@ from sqlalchemy.orm import selectinload
 from pydantic import BaseModel
 
 from db import get_db
-from models import Run, Message, Playbook, Workflow, Agent
+from models import Run, Message, Playbook, Workflow, Agent, Tool
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -60,7 +60,11 @@ async def chat_send(payload: ChatSendRequest, db: AsyncSession = Depends(get_db)
         agent_uuids = [uuid.UUID(aid) for aid in (source.agent_ids or [])]
         agents: list[Agent] = []
         for aid in agent_uuids:
-            q = await db.execute(select(Agent).options(selectinload(Agent.tools)).where(Agent.id == aid))
+            q = await db.execute(
+                select(Agent)
+                .options(selectinload(Agent.tools).selectinload(Tool.mcp_server))
+                .where(Agent.id == aid)
+            )
             a = q.scalar_one_or_none()
             if a:
                 agents.append(a)
@@ -85,7 +89,9 @@ async def chat_send(payload: ChatSendRequest, db: AsyncSession = Depends(get_db)
 
     elif payload.source_type == "agent":
         result_q = await db.execute(
-            select(Agent).options(selectinload(Agent.tools)).where(Agent.id == source_id)
+            select(Agent)
+            .options(selectinload(Agent.tools).selectinload(Tool.mcp_server))
+            .where(Agent.id == source_id)
         )
         agent = result_q.scalar_one_or_none()
         if not agent:

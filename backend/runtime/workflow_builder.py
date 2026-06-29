@@ -19,7 +19,7 @@ from typing_extensions import TypedDict, Annotated
 from langchain_core.messages import SystemMessage, HumanMessage as LCHumanMessage
 
 from models import Workflow, Agent
-from agents.builder import build_agent_graph, _get_llm
+from agents.builder import compile_agent, _get_llm
 from agents.guardrails import check_input, check_output
 
 logger = logging.getLogger(__name__)
@@ -38,10 +38,10 @@ class WorkflowState(TypedDict):
     route_to: Annotated[str, _last]  # populated by router_prompt nodes; consumed by conditional edges
 
 
-def _node_fn(agent: Agent, node_id: str, run_id_holder: list):
+def _node_fn(agent: Agent, node_id: str, run_id_holder: list, tools: list):
     """Return an async node function that runs a single compiled agent."""
-    compiled = build_agent_graph(agent)
-    logger.debug("Node fn built: agent=%s node=%s", agent.name, node_id)
+    compiled = compile_agent(agent, tools)
+    logger.debug("Node fn built: agent=%s node=%s tools=%d", agent.name, node_id, len(tools))
 
     async def _run(state: WorkflowState) -> dict:
         from runtime.event_stream import publish_event
@@ -175,7 +175,12 @@ def _router_node_fn(node_config: dict, node_id: str, routes: dict[str, str]):
     return _run
 
 
-async def build_workflow_graph(workflow: Workflow, agents_by_node: dict[str, Agent], run_id: str):
+async def build_workflow_graph(
+    workflow: Workflow,
+    agents_by_node: dict[str, Agent],
+    run_id: str,
+    tools_by_agent_id: dict[str, list] | None = None,
+):
     """
     Compile a multi-agent LangGraph StateGraph from workflow.nodes and workflow.edges JSONB.
 
@@ -277,7 +282,8 @@ async def build_workflow_graph(workflow: Workflow, agents_by_node: dict[str, Age
             if not agent:
                 logger.warning("No agent for node_key=%s — skipping", node_key)
                 continue
-            graph.add_node(node_key, _node_fn(agent, node_id, [run_id]))
+            agent_tools = (tools_by_agent_id or {}).get(str(agent.id), [])
+            graph.add_node(node_key, _node_fn(agent, node_id, [run_id], agent_tools))
             logger.debug("Agent node: %s agent=%s", node_key, agent.name)
 
     # Wire START → trigger (fallback to first node if no trigger type)

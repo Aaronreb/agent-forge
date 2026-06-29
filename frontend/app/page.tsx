@@ -2108,6 +2108,211 @@ function PlaybooksPage() {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Tools Page — MCP Server Configuration
+// ---------------------------------------------------------------------------
+function ToolsPage() {
+  const [servers, setServers] = useState<any[]>([]);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [toolsByServer, setToolsByServer] = useState<Record<string, any[]>>({});
+  const [syncing, setSyncing] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ name: "", url: "", api_key: "" });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const load = async () => {
+    try {
+      const [svrs, allTools] = await Promise.all([
+        api.listMCPServers(),
+        api.listMCPTools(),
+      ]);
+      setServers(svrs);
+      // Group DB tools by server so expand never requires a live sync
+      const grouped: Record<string, any[]> = {};
+      for (const t of allTools) {
+        if (t.mcp_server_id) {
+          if (!grouped[t.mcp_server_id]) grouped[t.mcp_server_id] = [];
+          grouped[t.mcp_server_id].push(t);
+        }
+      }
+      setToolsByServer(grouped);
+    } catch (e: any) {
+      setError("Failed to load: " + (e.message || "check that the backend is running"));
+    }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const handleAdd = async () => {
+    if (!form.name.trim() || !form.url.trim()) return;
+    setSaving(true);
+    setError("");
+    try {
+      const created = await api.createMCPServer(form);
+      setForm({ name: "", url: "", api_key: "" });
+      setShowForm(false);
+      await handleSync(created.id);
+    } catch (e: any) {
+      setError(e.message || "Failed to add server");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSync = async (id: string) => {
+    setSyncing(id);
+    setError("");
+    try {
+      const tools = await api.syncMCPServer(id);
+      setToolsByServer(prev => ({ ...prev, [id]: tools }));
+      setExpandedId(id);
+      // Refresh server list to get updated tool_count
+      api.listMCPServers().then(setServers).catch(() => {});
+    } catch (e: any) {
+      setError(`Sync failed: ${e.message}`);
+    } finally {
+      setSyncing(null);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Remove this MCP server and all its tools? Agents using these tools will lose them.")) return;
+    setDeleting(id);
+    try {
+      await api.deleteMCPServer(id);
+      setServers(prev => prev.filter(s => s.id !== id));
+      setToolsByServer(prev => { const n = { ...prev }; delete n[id]; return n; });
+      if (expandedId === id) setExpandedId(null);
+    } catch (e: any) {
+      setError("Delete failed: " + (e.message || "unknown error"));
+    } finally {
+      setDeleting(null);
+    }
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+        <div>
+          <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>MCP Servers</div>
+          <div style={{ fontSize: 13, color: theme.textMuted }}>Register MCP servers to make their tools available to agents.</div>
+        </div>
+        <button className="btn btn-primary" onClick={() => { setShowForm(true); setError(""); }}>+ Add Server</button>
+      </div>
+
+      {error && (
+        <div style={{ background: theme.redDim, border: `1px solid ${theme.red}44`, borderRadius: 8, padding: "10px 14px", color: theme.red, fontSize: 13, marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span>{error}</span>
+          <button onClick={() => setError("")} style={{ background: "none", border: "none", color: theme.red, cursor: "pointer", fontSize: 16, lineHeight: 1 }}>✕</button>
+        </div>
+      )}
+
+      {showForm && (
+        <div style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 12, padding: 20, marginBottom: 20 }}>
+          <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 16 }}>New MCP Server</div>
+          <div style={{ display: "grid", gap: 12 }}>
+            <div>
+              <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 6 }}>Name</div>
+              <input className="form-input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Local MCP" />
+            </div>
+            <div>
+              <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 6 }}>Server URL</div>
+              <input className="form-input" value={form.url} onChange={e => setForm(f => ({ ...f, url: e.target.value }))} placeholder="http://localhost:8001" />
+            </div>
+            <div>
+              <div style={{ fontSize: 12, color: theme.textMuted, marginBottom: 6 }}>API Key</div>
+              <input className="form-input" type="password" value={form.api_key} onChange={e => setForm(f => ({ ...f, api_key: e.target.value }))} placeholder="Optional" />
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+            <button className="btn btn-primary" onClick={handleAdd} disabled={saving || !form.name.trim() || !form.url.trim()}>
+              {saving ? "Adding…" : "Add & Sync"}
+            </button>
+            <button className="btn btn-ghost" onClick={() => { setShowForm(false); setError(""); }}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {servers.length === 0 && !showForm && (
+        <div style={{ textAlign: "center", padding: "60px 0", color: theme.textMuted }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>🔌</div>
+          <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>No MCP servers yet</div>
+          <div style={{ fontSize: 13 }}>Add an MCP server to discover its tools and make them available to agents.</div>
+        </div>
+      )}
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {servers.map(server => {
+          const tools = toolsByServer[server.id] || [];
+          const isExpanded = expandedId === server.id;
+          return (
+            <div key={server.id} style={{ background: theme.surface, border: `1px solid ${theme.border}`, borderRadius: 12, overflow: "hidden" }}>
+              {/* Header row */}
+              <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 18px", cursor: "pointer" }} onClick={() => setExpandedId(isExpanded ? null : server.id)}>
+                <div style={{ fontSize: 22 }}>🔌</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: 14 }}>{server.name}</div>
+                  <div style={{ fontSize: 12, color: theme.textMuted, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{server.url}</div>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                  <span style={{ fontSize: 12, background: theme.accentDim, color: theme.accent, padding: "3px 10px", borderRadius: 20, fontWeight: 600 }}>
+                    {tools.length > 0 ? tools.length : server.tool_count} {(tools.length || server.tool_count) === 1 ? "tool" : "tools"}
+                  </span>
+                  <div style={{ width: 8, height: 8, borderRadius: "50%", background: server.is_active ? theme.green : theme.textMuted }} title={server.is_active ? "Active" : "Inactive"} />
+                  <button className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={e => { e.stopPropagation(); handleSync(server.id); }} disabled={syncing === server.id}>
+                    {syncing === server.id ? "⟳ Syncing…" : "↻ Sync"}
+                  </button>
+                  <span style={{ color: theme.textMuted, fontSize: 12, transition: "transform 0.2s", transform: isExpanded ? "rotate(180deg)" : "none", display: "inline-block" }}>▼</span>
+                </div>
+              </div>
+
+              {/* Expanded tools list */}
+              {isExpanded && (
+                <div style={{ borderTop: `1px solid ${theme.border}` }}>
+                  {syncing === server.id ? (
+                    <div style={{ color: theme.textMuted, fontSize: 13, padding: "12px 18px" }}>Syncing tools…</div>
+                  ) : tools.length ? (
+                    <div style={{ padding: "12px 18px", display: "grid", gap: 8 }}>
+                      {tools.map((tool: any) => (
+                        <div key={tool.id} style={{ background: theme.bg, border: `1px solid ${theme.border}`, borderRadius: 8, padding: "10px 14px" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                            <span style={{ fontFamily: "DM Mono, monospace", fontSize: 13, color: theme.accent, fontWeight: 500 }}>
+                              {tool.tool_key || tool.name}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: 12, color: theme.textMuted }}>{tool.description}</div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ color: theme.textMuted, fontSize: 13, padding: "12px 18px" }}>
+                      No tools synced yet. Click ↻ Sync to discover tools from this server.
+                    </div>
+                  )}
+
+                  {/* Delete row */}
+                  <div style={{ borderTop: `1px solid ${theme.border}`, padding: "10px 18px", display: "flex", justifyContent: "flex-end" }}>
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      style={{ color: theme.red, border: `1px solid ${theme.red}44`, fontSize: 12 }}
+                      onClick={() => handleDelete(server.id)}
+                      disabled={deleting === server.id}
+                    >
+                      {deleting === server.id ? "Removing…" : "🗑 Remove server & tools"}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [page, setPage] = useState("agents");
 
@@ -2116,6 +2321,7 @@ export default function App() {
     { id: "workflows", icon: "🔀", label: "Workflows" },
     { id: "chat", icon: "💬", label: "Chat" },
     { id: "runs", icon: "▶️", label: "Runs & Logs" },
+    { id: "tools", icon: "🔧", label: "Tools" },
   ];
 
   const titles: Record<string, string> = {
@@ -2123,6 +2329,7 @@ export default function App() {
     workflows: "Workflows",
     chat: "Chat",
     runs: "Runs & Monitoring",
+    tools: "Tool Configuration",
   };
 
   return (
@@ -2154,6 +2361,7 @@ export default function App() {
             {page === "workflows" && <WorkflowsPage />}
             {page === "chat" && <ChatPage />}
             {page === "runs" && <RunsPage />}
+            {page === "tools" && <ToolsPage />}
           </div>
         </div>
       </div>

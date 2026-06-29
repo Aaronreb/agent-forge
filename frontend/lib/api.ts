@@ -66,6 +66,14 @@ export const api = {
 
   // Config
   getConfig: () => req<PlatformConfig>("/config/options"),
+
+  // MCP Servers
+  listMCPServers: () => req<MCPServer[]>("/mcp/servers"),
+  createMCPServer: (body: { name: string; url: string; api_key: string }) =>
+    req<MCPServer>("/mcp/servers", { method: "POST", body: JSON.stringify(body) }),
+  deleteMCPServer: (id: string) => req<void>(`/mcp/servers/${id}`, { method: "DELETE" }),
+  syncMCPServer: (id: string) => req<Tool[]>(`/mcp/servers/${id}/sync`, { method: "POST" }),
+  listMCPTools: () => req<Tool[]>("/mcp/tools"),
 };
 
 // ---------------------------------------------------------------------------
@@ -102,6 +110,17 @@ export interface Tool {
   id: string;
   name: string;
   description: string;
+  tool_key?: string | null;
+  mcp_server_id?: string | null;
+}
+
+export interface MCPServer {
+  id: string;
+  name: string;
+  url: string;
+  is_active: boolean;
+  created_at: string;
+  tool_count: number;
 }
 
 export interface Channel {

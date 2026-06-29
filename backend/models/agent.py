@@ -3,7 +3,11 @@ from datetime import datetime
 from sqlalchemy import String, Text, Boolean, Integer, JSON, DateTime, ForeignKey, Table, Column
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
+from typing import TYPE_CHECKING
 from .base import Base
+
+if TYPE_CHECKING:
+    from .mcp_server import MCPServer
 
 agent_tools = Table(
     "agent_tools",
@@ -24,11 +28,16 @@ class Tool(Base):
     __tablename__ = "tools"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    name: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     config: Mapped[dict] = mapped_column(JSON, default=dict)
+    mcp_server_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("mcp_servers.id", ondelete="CASCADE"), nullable=True
+    )
+    tool_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     agents: Mapped[list["Agent"]] = relationship("Agent", secondary=agent_tools, back_populates="tools")
+    mcp_server: Mapped["MCPServer | None"] = relationship("MCPServer", back_populates="tools")
 
 
 class Channel(Base):

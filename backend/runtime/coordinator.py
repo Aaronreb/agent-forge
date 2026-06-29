@@ -18,8 +18,10 @@ from db import AsyncSessionLocal
 from models import Run, Workflow, Agent, Message
 from runtime.workflow_builder import build_workflow_graph
 from runtime.event_stream import publish_event
+from agents.builder import mcp_tools_context
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
+from models import Tool
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +111,10 @@ async def execute_workflow(run_id: str, input_text: str, thread_id: str | None =
                     continue
                 result = await db.execute(
                     select(Agent)
-                    .options(selectinload(Agent.tools), selectinload(Agent.channels))
+                    .options(
+                        selectinload(Agent.tools).selectinload(Tool.mcp_server),
+                        selectinload(Agent.channels),
+                    )
                     .where(Agent.id == uuid.UUID(agent_db_id))
                 )
                 agent = result.scalar_one_or_none()
@@ -119,25 +124,29 @@ async def execute_workflow(run_id: str, input_text: str, thread_id: str | None =
                 else:
                     logger.warning("No agent found for agent_db_id=%s — node will be skipped", agent_db_id)
 
-            compiled = await build_workflow_graph(workflow, agents_by_node, run_id)
+            all_agents = list(agents_by_node.values())
+            async with mcp_tools_context(all_agents, db) as tools_by_agent_id:
+                compiled = await build_workflow_graph(
+                    workflow, agents_by_node, run_id, tools_by_agent_id
+                )
 
-            await publish_event(run_id, {"type": "run_start", "run_id": run_id, "input": input_text})
+                await publish_event(run_id, {"type": "run_start", "run_id": run_id, "input": input_text})
 
-            cfg = {
-                "configurable": {"thread_id": thread_id or run_id},
-                "run_id": uuid.UUID(run_id),
-                "run_name": f"workflow:{workflow.name}",
-            }
-            final_state = await compiled.ainvoke(
-                {
-                    "messages": [HumanMessage(content=input_text)],
-                    "run_id": run_id,
-                    "current_agent_id": "",
-                    "final_output": "",
-                    "route_to": "",
-                },
-                config=cfg,
-            )
+                cfg = {
+                    "configurable": {"thread_id": thread_id or run_id},
+                    "run_id": uuid.UUID(run_id),
+                    "run_name": f"workflow:{workflow.name}",
+                }
+                final_state = await compiled.ainvoke(
+                    {
+                        "messages": [HumanMessage(content=input_text)],
+                        "run_id": run_id,
+                        "current_agent_id": "",
+                        "final_output": "",
+                        "route_to": "",
+                    },
+                    config=cfg,
+                )
             logger.info("Graph execution complete: run_id=%s", run_id)
 
             _COST_PER_TOKEN = 0.0000004

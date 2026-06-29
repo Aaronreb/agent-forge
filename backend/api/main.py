@@ -20,6 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
 from api.routes import agents, workflows, runs, telegram, conversations, playbooks, chat, config_options
+from api.routes import mcp as mcp_routes
 from api.websockets import router as ws_router
 from db import engine
 from models import Base
@@ -48,6 +49,7 @@ app.include_router(conversations.router, prefix="/conversations", tags=["convers
 app.include_router(playbooks.router, prefix="/playbooks", tags=["playbooks"])
 app.include_router(chat.router, prefix="/chat", tags=["chat"])
 app.include_router(config_options.router, prefix="/config", tags=["config"])
+app.include_router(mcp_routes.router)
 app.include_router(ws_router)
 
 
@@ -84,6 +86,10 @@ async def startup():
             "ALTER TABLE runs ADD COLUMN IF NOT EXISTS agent_id UUID",
             "ALTER TABLE runs ADD COLUMN IF NOT EXISTS langsmith_url VARCHAR(512)",
             "ALTER TABLE runs ADD COLUMN IF NOT EXISTS trace JSONB",
+            # MCP support
+            "ALTER TABLE tools ADD COLUMN IF NOT EXISTS mcp_server_id UUID REFERENCES mcp_servers(id) ON DELETE CASCADE",
+            "ALTER TABLE tools ADD COLUMN IF NOT EXISTS tool_key VARCHAR(64)",
+            "ALTER TABLE tools ALTER COLUMN name TYPE VARCHAR(128)",
         ]
         for stmt in migrations:
             try:

@@ -18,19 +18,18 @@ from langgraph_supervisor import create_supervisor
 
 from db import AsyncSessionLocal
 from models import Run, Message, Playbook, Agent
-from agents.builder import _get_llm
-from agents.tools import TOOL_REGISTRY
+from agents.builder import _get_llm, compile_agent, mcp_tools_context
 from runtime.event_stream import publish_event
 from runtime.memory import CHECKPOINTER
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
+from models import Tool
 
 logger = logging.getLogger(__name__)
 
 
-def _build_subagent(agent: Agent):
+def _build_subagent(agent: Agent, tools: list):
     """Compile a named ReAct sub-agent for use inside create_supervisor."""
-    tools = [TOOL_REGISTRY[t.name] for t in agent.tools if t.name in TOOL_REGISTRY]
     llm = _get_llm(agent.model)
     system_prompt = agent.system_prompt or f"You are {agent.name}, a helpful {agent.role}."
     return create_react_agent(
@@ -82,7 +81,10 @@ async def execute_playbook(run_id: str, input_text: str, thread_id: str | None =
             for agent_id in agent_uuids:
                 result = await db.execute(
                     select(Agent)
-                    .options(selectinload(Agent.tools), selectinload(Agent.channels))
+                    .options(
+                        selectinload(Agent.tools).selectinload(Tool.mcp_server),
+                        selectinload(Agent.channels),
+                    )
                     .where(Agent.id == agent_id)
                 )
                 agent = result.scalar_one_or_none()
@@ -95,23 +97,9 @@ async def execute_playbook(run_id: str, input_text: str, thread_id: str | None =
             if not agents:
                 raise ValueError("Playbook has no valid agents")
 
-            subagents = [_build_subagent(a) for a in agents]
-            supervisor_llm = _get_llm(playbook.supervisor_model or "gpt-4o")
-
-            compiled = create_supervisor(
-                subagents,
-                model=supervisor_llm,
-                prompt=playbook.playbook_text or "",
-            ).compile(checkpointer=CHECKPOINTER)
-
-            logger.debug("Supervisor compiled for run id=%s (%d agents)", run_id, len(subagents))
-
-            await publish_event(run_id, {"type": "run_start", "run_id": run_id, "input": input_text})
-
             agent_name_set = {a.name for a in agents}
             final_messages: list = []
             trace_events: list = []
-            # Accumulate token counts per agent node for agent_done events
             agent_tokens: dict[str, int] = {}
             langsmith_root_run_id: str | None = None
 
@@ -119,12 +107,29 @@ async def execute_playbook(run_id: str, input_text: str, thread_id: str | None =
                 trace_events.append(ev)
                 await publish_event(run_id, ev)
 
-            cfg = {
-                "configurable": {"thread_id": thread_id or run_id},
-                "run_id": uuid.UUID(run_id),
-                "run_name": f"playbook:{playbook.name}",
-            }
-            async for event in compiled.astream_events(
+            async with mcp_tools_context(agents, db) as tools_by_agent_id:
+                subagents = [
+                    _build_subagent(a, tools_by_agent_id.get(str(a.id), []))
+                    for a in agents
+                ]
+                supervisor_llm = _get_llm(playbook.supervisor_model or "gpt-4o")
+
+                compiled = create_supervisor(
+                    subagents,
+                    model=supervisor_llm,
+                    prompt=playbook.playbook_text or "",
+                ).compile(checkpointer=CHECKPOINTER)
+
+                logger.debug("Supervisor compiled for run id=%s (%d agents)", run_id, len(subagents))
+
+                await publish_event(run_id, {"type": "run_start", "run_id": run_id, "input": input_text})
+
+                cfg = {
+                    "configurable": {"thread_id": thread_id or run_id},
+                    "run_id": uuid.UUID(run_id),
+                    "run_name": f"playbook:{playbook.name}",
+                }
+                async for event in compiled.astream_events(
                 {"messages": [HumanMessage(content=input_text)]},
                 config=cfg,
                 version="v2",
